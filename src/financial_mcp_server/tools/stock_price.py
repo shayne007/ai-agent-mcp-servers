@@ -7,7 +7,7 @@ from datetime import datetime
 import json
 
 # Create cache directory if it doesn't exist
-CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'cache')
+CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'data', 'cache')
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 def save_to_cache(df, filename='stock_data.csv'):
