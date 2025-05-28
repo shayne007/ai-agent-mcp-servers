@@ -1,2 +1,6 @@
 /venv/
 .DS_Store
+.idea
+.roo
+data/cache/
+**/__pycache__
