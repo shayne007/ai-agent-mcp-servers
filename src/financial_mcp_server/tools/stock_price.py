@@ -5,6 +5,8 @@ import pandas as pd
 import os
 from datetime import datetime
 import json
+import concurrent.futures
+import time
 
 # Create cache directory if it doesn't exist
 CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'data', 'cache')
@@ -35,6 +37,15 @@ def load_from_cache(filename='stock_data.csv'):
         return df
     return None
 
+def fetch_stock_data_with_timeout(timeout=5):
+    """Fetch stock data with timeout"""
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        future = executor.submit(ak.stock_zh_a_spot_em)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(f"获取股票数据超时，超过{timeout}秒")
+
 @tool
 def get_stock_info(code: str, name: str) -> str:
     """可以根据传入的股票代码或股票名称获取股票实时行情信息
@@ -42,6 +53,8 @@ def get_stock_info(code: str, name: str) -> str:
         code: 股票代码
         name: 股票名称
     """
+    # Ensure code is a string and remove any leading zeros
+    code = str(code).lstrip('0')
     code_isempty = (code == "" or len(code) <= 2)
     name_isempty = (name == "" or len(name) <= 2)
 
@@ -49,10 +62,16 @@ def get_stock_info(code: str, name: str) -> str:
         return []
 
     try:
-        # Try to get fresh data from akshare
-        df = ak.stock_zh_a_spot_em()
+        # Try to get fresh data from akshare with timeout
+        df = fetch_stock_data_with_timeout()
         # Save to cache if successful
         save_to_cache(df)
+    except TimeoutError as e:
+        print(f"Timeout error: {e}")
+        # If timeout occurs, try to load from cache
+        df = load_from_cache()
+        if df is None:
+            return {"error": "获取股票数据超时，且本地缓存不可用"}
     except Exception as e:
         print(f"Error fetching from akshare: {e}")
         # If akshare fails, try to load from cache
@@ -65,8 +84,12 @@ def get_stock_info(code: str, name: str) -> str:
         if code_isempty and not name_isempty:
             ret = df[df['名称'].str.contains(name)]
         elif not code_isempty and name_isempty:
+            # Remove leading zeros from stock codes in the DataFrame for comparison
+            df['代码'] = df['代码'].astype(str).str.lstrip('0')
             ret = df[df['代码'].str.contains(code)]
         else:
+            # Remove leading zeros from stock codes in the DataFrame for comparison
+            df['代码'] = df['代码'].astype(str).str.lstrip('0')
             ret = df[df['代码'].str.contains(code) & df['名称'].str.contains(name)]
         
         if ret is None or ret.empty:
