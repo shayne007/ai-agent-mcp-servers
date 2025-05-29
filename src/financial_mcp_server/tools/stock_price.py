@@ -44,12 +44,27 @@ def load_from_cache(filename='stock_data.csv'):
 
 def fetch_stock_data_with_timeout(timeout=5):
     """Fetch stock data with timeout"""
+    # Try to fetch new data first
     with concurrent.futures.ThreadPoolExecutor() as executor:
         future = executor.submit(ak.stock_zh_a_spot_em)
         try:
-            return future.result(timeout=timeout)
-        except concurrent.futures.TimeoutError:
-            raise TimeoutError(f"获取股票数据超时，超过{timeout}秒")
+            df = future.result(timeout=timeout)
+            if df is not None and not df.empty:
+                # Save to cache for future use when service is down
+                save_to_cache(df)
+                logger.info("Successfully fetched and cached new stock data")
+                return df
+        except (concurrent.futures.TimeoutError, Exception) as e:
+            logger.warning(f"Failed to fetch data from AKShare: {str(e)}")
+            # If fetch fails, try to load from cache
+            cached_data = load_from_cache()
+            if cached_data is not None:
+                logger.info("Using cached stock data as fallback")
+                return cached_data
+            # If no cache available, raise the original error
+            if isinstance(e, concurrent.futures.TimeoutError):
+                raise TimeoutError(f"获取股票数据超时，超过{timeout}秒")
+            raise e
 
 @tool("get_macro_economic_data")
 def get_macro_economic_data(indicator: str) -> List[Dict[str, Any]]:
@@ -76,10 +91,19 @@ def get_stock_real_time_data(code: str, name: str) -> str:
         code: 股票代码
         name: 股票名称
     """
+    
     try:
-        # Fetch Hong Kong stock data
-        logger.info("Fetching Hong Kong stock data...")
-        df = ak.stock_hk_spot()
+        # Check if it's a HK stock query
+        is_hk_stock = code.endswith('.HK') if code else False
+        
+        if is_hk_stock:
+            # Fetch Hong Kong stock data
+            logger.info("Fetching Hong Kong stock data...")
+            df = ak.stock_hk_spot()
+        else:
+            # Fetch A-share stock data with timeout
+            logger.info("Fetching A-share stock data...")
+            df = fetch_stock_data_with_timeout()
         
         if df is None or df.empty:
             return {"error": "无法获取股票数据"}
@@ -94,13 +118,23 @@ def get_stock_real_time_data(code: str, name: str) -> str:
 
         try:
             ret = None
-            if code_isempty and not name_isempty:
-                ret = df[df['name'].str.contains(name, case=False, na=False)]
-            elif not code_isempty and name_isempty:
-                ret = df[df['symbol'].str.contains(code, case=False, na=False)]
+            if is_hk_stock:
+                if code_isempty and not name_isempty:
+                    ret = df[df['name'].str.contains(name, case=False, na=False)]
+                elif not code_isempty and name_isempty:
+                    ret = df[df['symbol'].str.contains(code, case=False, na=False)]
+                else:
+                    ret = df[df['symbol'].str.contains(code, case=False, na=False) & 
+                            df['name'].str.contains(name, case=False, na=False)]
             else:
-                ret = df[df['symbol'].str.contains(code, case=False, na=False) & 
-                        df['name'].str.contains(name, case=False, na=False)]
+                # For A-share stocks
+                if code_isempty and not name_isempty:
+                    ret = df[df['名称'].str.contains(name, case=False, na=False)]
+                elif not code_isempty and name_isempty:
+                    ret = df[df['代码'].str.contains(code, case=False, na=False)]
+                else:
+                    ret = df[df['代码'].str.contains(code, case=False, na=False) & 
+                            df['名称'].str.contains(name, case=False, na=False)]
             
             if ret is None or ret.empty:
                 return {"error": "未找到匹配的股票信息"}
@@ -115,24 +149,62 @@ def get_stock_real_time_data(code: str, name: str) -> str:
         return {"error": f"获取股票数据失败: {str(e)}"}
 
 @tool("get_stock_info")
-def get_stock_info(code: str) -> Dict[str, Any]:
+def get_stock_info(code: str, name: str) -> Dict[str, Any]:
     """获取股票基本信息
     Args:
-        code: 股票代码
+        code: 股票代码（如果不知道可以传空字符串）
+        name: 股票名称（如果不知道可以传空字符串）
     """
     try:
-        logger.info(f"Fetching stock info for {code}")
+        # Check if both parameters are empty
+        if not code and not name:
+            return {"error": "股票代码和名称不能同时为空"}
+
+        # If only name is provided, first try to find the code from A-share stocks
+        if not code and name:
+            logger.info(f"Searching for stock code by name: {name}")
+            df = fetch_stock_data_with_timeout()
+            if df is not None and not df.empty:
+                matching_stocks = df[df['名称'].str.contains(name, case=False, na=False)]
+                if not matching_stocks.empty:
+                    code = matching_stocks.iloc[0]['代码']
+                    logger.info(f"Found stock code {code} for name {name}")
+
+        # If we have a code now, try to get A-share stock info
+        if code:
+            logger.info(f"Fetching stock info for code: {code}")
+            stock_individual_info_em_df = ak.stock_individual_info_em(symbol=code)
+            
+            if stock_individual_info_em_df is not None and not stock_individual_info_em_df.empty:
+                # if isinstance(stock_individual_info_em_df, pd.DataFrame):
+                    # return stock_individual_info_em_df.iloc[0].to_dict()
+                return stock_individual_info_em_df
+
+        # If A-share search failed, try Hong Kong stock data
+        logger.info("Trying Hong Kong stock data...")
         df = ak.stock_hk_spot()
+        
+        if df is None or df.empty:
+            return {"error": "无法获取股票数据"}
+
         # Remove .HK suffix if present
-        code = code.replace('.HK', '')
-        logger.info(f"Available stock codes: {df['symbol'].unique()[:5]}")  # Show first 5 codes
-        matching_stocks = df[df['symbol'] == code]
+        if code:
+            code = code.replace('.HK', '').lstrip('0')
+        
+        # Search by code or name
+        if code and name:
+            matching_stocks = df[(df['symbol'].str.contains(code, case=False, na=False)) & 
+                               (df['name'].str.contains(name, case=False, na=False))]
+        elif code:
+            matching_stocks = df[df['symbol'].str.contains(code, case=False, na=False)]
+        else:  # search by name only
+            matching_stocks = df[df['name'].str.contains(name, case=False, na=False)]
         
         if matching_stocks.empty:
-            return {"error": f"未找到股票代码 {code} 的信息"}
+            return {"error": f"未找到匹配的股票信息"}
             
-        stock_info = matching_stocks.iloc[0].to_dict()
-        return stock_info
+        return matching_stocks.iloc[0].to_dict()
+            
     except Exception as e:
         logger.error(f"Error fetching stock info: {str(e)}")
         return {"error": f"获取股票信息失败: {str(e)}"}
@@ -166,8 +238,10 @@ llm_with_tools = llm.bind_tools(tools)
 
 if __name__ == "__main__":
     # Test the tools
-    print(tools_by_name['get_macro_economic_data'].invoke({"indicator": "GDP"}))
-    # print(tools_by_name['get_stock_real_time_data'].invoke({"code": "00700", "name": "腾讯"}))
-    # print(tools_by_name['get_stock_info'].invoke({"code": "00700"}))
+    # print(tools_by_name['get_macro_economic_data'].invoke({"indicator": "GDP"}))
+    print(tools_by_name['get_stock_real_time_data'].invoke({"code": "00700.HK", "name": "腾讯"}))
+    # print(tools_by_name['get_stock_real_time_data'].invoke({"code": "300750", "name": "宁德时代"}))
+    print(tools_by_name['get_stock_info'].invoke({"code": "300750","name": ""}))
+    print(tools_by_name['get_stock_info'].invoke({"code": "","name": "宁德时代"}))
     # print(tools_by_name['get_hk_stock_hist'].invoke({"code": "0700.HK", "start_date": "20250101", "end_date": "20250201"}))
 
