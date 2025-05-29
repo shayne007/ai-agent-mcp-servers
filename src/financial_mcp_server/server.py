@@ -1,6 +1,7 @@
 import logging
 from mcp.server.fastmcp import FastMCP
-from .register import StockAnalysisTools
+from financial_mcp_server.registers.stock_analysis import StockAnalysisTools
+from financial_mcp_server.registers.stock_news import StockNewsTools
 
 
 class StockAnalysisMCPServer:
@@ -21,13 +22,15 @@ class StockAnalysisMCPServer:
     def _register_tools(self):
         """Register all MCP tools."""
         # Initialize tool classes
-        job_tools = StockAnalysisTools(self.logger)
+        analysis_tools = StockAnalysisTools(self.logger)
+        news_tools = StockNewsTools(self.logger)
 
-        job_tools.register_tools(self.mcp)
+        analysis_tools.register_tools(self.mcp)
+        news_tools.register_tools(self.mcp)
 
     def run(self):
         """Run the MCP server."""
-        self.mcp.run()
+        self.mcp.run("sse")
 
 
 def main():
