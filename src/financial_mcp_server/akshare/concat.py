@@ -21,7 +21,8 @@ def concat_csv(file_name: str):
     # 列出文件夹中的所有文件和目录
     files = os.listdir(DATA_DIR)
     # 定义一个正则表达式，匹配以数字开头的文件名
-    pattern = re.compile(r'^\d+_.+\.csv$')
+    # pattern = re.compile(r'^\d+_.+\.csv$')
+    pattern = re.compile(r'^batch_.+\.csv$')
     # 遍历文件，筛选出符合条件的文件名
     filtered_files = [file for file in files if pattern.match(file)]
     ret = pd.DataFrame()

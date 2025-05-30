@@ -9,7 +9,7 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'data', 'da
 os.makedirs(DATA_DIR, exist_ok=True)
 
 MAX_RETRIES = 3
-INITIAL_DELAY = 2  # seconds
+INITIAL_DELAY = 5  # seconds
 
 async def save_daily_k(codes: List[str], start_date: str, end_date: str,
     prefix: str):

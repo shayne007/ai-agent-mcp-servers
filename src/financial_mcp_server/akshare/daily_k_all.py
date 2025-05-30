@@ -15,24 +15,25 @@ def get_all_codes():
         return []
 
 
-def save_all_data():
+def save_all_data(start_date: str, end_date: str):
     codes = get_all_codes()
     if not codes:
         print("No stock codes found")
         return
-        
+
     print("共有{}个股票需要抓取".format(len(codes)))
-    n = 100  # Process 100 stocks at a time
+    n = 500  # Process 500 stocks at a time
     total_batches = (len(codes) + n - 1) // n
-    
+
     for i in range(0, len(codes), n):
         batch_num = i // n + 1
         subset = codes[i:i + n]
         if len(subset) > 0:
-            print(f"Processing batch {batch_num}/{total_batches} ({len(subset)} stocks)")
+            print(
+                f"Processing batch {batch_num}/{total_batches} ({len(subset)} stocks)")
             try:
-                asyncio.run(save_daily_k(subset, '20230422', '20250422',
-                                       prefix=f"batch_{batch_num}_"))
+                asyncio.run(save_daily_k(subset, start_date, end_date,
+                                         prefix=f"batch_{batch_num}_"))
                 print(f"Completed batch {batch_num}/{total_batches}")
                 # Add a small delay between batches to avoid overwhelming the server
                 time.sleep(1)
@@ -42,4 +43,4 @@ def save_all_data():
 
 
 if __name__ == "__main__":
-    save_all_data()
+    save_all_data(start_date='20250101', end_date='20250530')
