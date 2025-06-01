@@ -28,6 +28,10 @@ def analyze_stocks(stock_codes: List[str], start_date: str,
     -----------
     stock_codes : List[str]
         股票代码列表
+    start_date : str
+        查询的起始日期，格式YYYYMMDD，比如：20250101
+    end_date : str
+        查询的结束日期 ，格式YYYYMMDD，比如：20250101
     """
     # 如果输入是字典，提取stock_codes
     if isinstance(stock_codes, dict):

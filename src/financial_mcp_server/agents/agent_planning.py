@@ -2,6 +2,7 @@ from langgraph.graph import MessagesState, StateGraph, START, END
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 from typing_extensions import Literal
 from financial_mcp_server.llms.DeepSeek import DeepSeekR1, DeepSeekV3
+from financial_mcp_server.llms.DashScope import Tongyi
 from financial_mcp_server.tools.financial_report import get_financial_report
 from financial_mcp_server.tools.stock_analysis import analyze_stocks
 from financial_mcp_server.prompts.prompt import plan_prompt
@@ -11,6 +12,7 @@ tools = [get_financial_report, analyze_stocks]
 tools_by_name = {tool.name: tool for tool in tools}
 deepseek_v3 = DeepSeekV3()
 deepseek_r1 = DeepSeekR1()
+dashscope_qwen_max = Tongyi()
 llm_with_tools = deepseek_v3.bind_tools(tools)
 
 
@@ -23,7 +25,7 @@ def plan_node(state):
     prompt = plan_prompt
 
     # 调用 LLM
-    response = deepseek_r1.invoke(
+    response = dashscope_qwen_max.invoke(
         [SystemMessage(content=prompt), state["messages"][0]])
 
     state["plan"] = response.content
@@ -117,14 +119,13 @@ agent_builder.add_edge("environment", "llm_call")
 agent = agent_builder.compile()
 
 # 保存代理工作流程图到文件
-graph_png = agent.get_graph(xray=True).draw_mermaid_png()
-with open("agent_graph.png", "wb") as f:
-    f.write(graph_png)
+# graph_png = agent.get_graph(xray=True).draw_mermaid_png()
+# with open("agent_graph.png", "wb") as f:
+#     f.write(graph_png)
 
 # Invoke
 input_messages = [HumanMessage(
-    content="对比一下 '600600', '002461', '000729', '600573' 这四只股票的股价表现和财务情况，哪家更值得投资")]
+    content="对比一下 '688070', '301024', '300149', '300546' 这四只股票的股价表现和财务情况，哪家更值得投资，数据查询范围：2024-01-01 至 2025-05-30")]
 # question = "对比一下 600600, 002461, 000729, 600573的股价表现和财务情况，哪家更值得投资"
 ret = agent.invoke({"plan": "", "messages": input_messages})
-
 print(ret["messages"][-1].content)
